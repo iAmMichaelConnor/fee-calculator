@@ -3,10 +3,12 @@
   "version": "1.0.0",
   "description": "fee calculator",
   "main": "index.mjs",
-  "type": "module",
   "scripts": {
     "start": "node ./index.mjs",
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "bin": {
+    "fee-calculator": "bin/index.mjs"
   },
   "repository": {
     "type": "git",

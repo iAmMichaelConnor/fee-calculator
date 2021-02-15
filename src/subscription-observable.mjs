@@ -10,25 +10,26 @@
 import apolloLink from 'apollo-link'; // SEE HERE FOR REALLY IMPORTANT STUFF: https://www.apollographql.com/docs/link/
 // https://github.com/hasura/nodejs-graphql-subscriptions-boilerplate
 import apolloLinkWS from 'apollo-link-ws';
-// import apolloLinkHttp from 'apollo-link-http';
+import apolloLinkHttp from 'apollo-link-http';
 import subscriptionsTransportWS from 'subscriptions-transport-ws';
 import ws from 'ws';
-// import fetch from 'cross-fetch';
+import fetch from 'node-fetch';
 
 const { execute, makePromise } = apolloLink;
 const { WebSocketLink } = apolloLinkWS;
-// const { HttpLink } = apolloLinkHttp;
+const { HttpLink } = apolloLinkHttp;
 const { SubscriptionClient } = subscriptionsTransportWS;
 
-const URL = 'ws://localhost:3085/graphql';
+const wsURL = 'ws://localhost:3085/graphql';
+const httpURL = 'http://localhost:3085/graphql';
 
 const getWsClient = wsURL => {
   const client = new SubscriptionClient(wsURL, { reconnect: true }, ws);
   return client;
 };
 
-const wsLink = new WebSocketLink(getWsClient(URL));
-// const httpLink = new HttpLink({ uri: URL, fetch });
+const wsLink = new WebSocketLink(getWsClient(wsURL));
+const httpLink = new HttpLink({ uri: httpURL, fetch });
 
 /**
  * @param {Operation} operation
@@ -65,12 +66,35 @@ export const subscribe = (operation, observer) => {
  */
 export const query = (operation, dataCallback, errorCallback) => {
   // prettier-ignore
-  return makePromise(execute(wsLink, operation)) // http link?
+  return makePromise(execute(httpLink, operation)) // http link?
     .then(dataCallback)
     .catch(errorCallback);
 };
 
 export const mutate = query;
+
+async function fetchGraphQL(operation) {
+  console.log('OPERATION', operation)
+  const result = await fetch(httpURL, {
+    method: 'POST',
+    body: JSON.stringify(operation),
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  console.log('RESULLTTTT', result)
+
+  return result.json();
+}
+
+// export async function query(operation, dataCallback, errorCallback) {
+//   const { errors, data } = await fetchGraphQL(operation);
+//
+//   if (errors) {
+//     errorCallback(errors);
+//   } else {
+//     dataCallback(data);
+//   }
+// }
 
 // **************************************************
 
