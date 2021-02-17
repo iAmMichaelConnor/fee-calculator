@@ -1,97 +1,20 @@
-/**
- ********* Sample usage from your nodejs code *****************************
- */
-
-// const gql = require('graphql-tag');
-// const { createSubscriptionObservable } = require('./subscription-observable.js');
-
 import config from 'config';
-import gql from 'graphql-tag';
-import { subscribe, query, mutate } from './subscription-observable.mjs';
 import poll from './utils-poll.mjs';
+import { sleep, formatTime, toDate } from './utils-time.mjs';
+import {
+  getSyncStatus,
+  getConsensusData,
+  getNextBlockProductionTimes,
+  setSnarkWorkFee,
+  setSnarkWorker,
+  stopSnarkWorker,
+  subscribeToNewBlocks,
+} from './query-wrappers.mjs';
 
-let PK = config.BLOCK_PRODUCER_PK; // default
-
-const NEW_BLOCK_SUBSCRIPTION_QUERY = gql`
-  subscription NewBlock {
-    newBlock {
-      stateHash
-      stateHashField
-      creator
-      snarkJobs {
-        fee
-        prover
-        workIds
-      }
-      transactions {
-        feeTransfer
-        userCommands
-      }
-    }
-  }
-`;
-
-const SYNC_STATUS_QUERY = gql`
-  query SyncStatus {
-    daemonStatus {
-      syncStatus
-    }
-  }
-`;
-
-const SET_SNARK_WORKER_MUTATION = gql`
-  mutation SetSnarkWorker($publicKey: String!) {
-    setSnarkWorker(input: { publicKey: $publicKey }) {
-      lastSnarkWorker
-    }
-  }
-`;
-
-const STOP_SNARK_WORKER_MUTATION = gql`
-  mutation StopSnarkWorker {
-    setSnarkWorker(input: {}) {
-      lastSnarkWorker
-    }
-  }
-`;
-
-const SET_SNARK_WORK_FEE_MUTATION = gql`
-  mutation SetSnarkWorkFee($fee: String!) {
-    setSnarkWorkFee(input: { fee: $fee }) {
-      lastFee
-    }
-  }
-`;
-
-function setSnarkWorkFee(fee) {
-  mutate(
-    {
-      query: SET_SNARK_WORK_FEE_MUTATION,
-      variables: { fee },
-    },
-    data => console.log('SUCCESSFULLY SET SNARK WORK FEE with returned data:', data),
-    error => console.error('MUTATION SetSnarkWorkFee errored with:', error),
-  );
-}
-
-function setSnarkWorker(publicKey) {
-  mutate(
-    {
-      query: SET_SNARK_WORKER_MUTATION,
-      variables: { publicKey },
-    },
-    data => console.log('SUCCESSFULLY SET SNARK WORKER with returned data:', data),
-    error => console.error('MUTATION SetSnarkWorker errored with:', error),
-  );
-}
-
-function stopSnarkWorker() {
-  mutate(
-    { query: STOP_SNARK_WORKER_MUTATION },
-    data => console.log('SUCCESSFULLY STOPPED SNARK WORKER with returned data:', data),
-    error => console.error('MUTATION StopSnarkWorker errored with:', error),
-  );
-}
+const { RETRY_INTERVAL, STOP_SNARK_WORKER_BEFORE, BLOCK_PRODUCTION_WINDOW } = config;
+let { LATEST_FEE } = config;
+let subscription;
+let PK;
 
 const newBlockResponder = data => {
   const {
@@ -107,86 +30,115 @@ const newBlockResponder = data => {
     const avg = arrayAverage(snarkJobs);
     const min = Math.min(snarkJobs);
     const max = Math.max(snarkJobs);
-    setSnarkWorkFee(max.toString());
-  }
-};
-
-function subscribeToNewBlocks() {
-  const subscription = subscribe(
-    {
-      query: NEW_BLOCK_SUBSCRIPTION_QUERY, // Subscription query
-      // {id: 1} // Query variables
-    },
-    {
-      next: data => {
-        console.log(`received data: ${JSON.stringify(data, null, 2)}`);
-        newBlockResponder(data);
-      },
-      error: error => console.log(`received error ${error}`),
-      complete: () => console.log(`complete`),
-    },
-  );
-
-  console.log('Subscribed to newBlocks...');
-  console.log('subscription:', subscription);
-  return subscription;
-}
-
-const syncStatusResponder = (data, resolve, synced) => {
-  const {
-    data: {
-      daemonStatus: { syncStatus },
-    },
-  } = data;
-  console.log('SYNC STATUS:', syncStatus);
-  switch (syncStatus) {
-    case 'SYNCED': {
-      resolve(synced);
-      break;
-    }
-    default:
-      console.log(`syncStatus = ${syncStatus}...`);
-      resolve(!synced);
-      break;
+    LATEST_FEE = max.toString();
+    setSnarkWorkFee(LATEST_FEE);
   }
 };
 
 /** @param {Boolean} synced: true: poll until synced or false: poll until NOT synced */
-function pollSyncStatus(synced) {
+async function pollSyncStatus(synced) {
   console.log(`Polling until ${synced ? 'synced' : 'NOT synced anymore...'}`);
-  const queryPromise = async (resolve, reject) => {
-    // we wrap the query in a promise, so that the polling function
-    // can receive 'false' response upon error.
-    query(
-      { query: SYNC_STATUS_QUERY },
-      data => {
-        console.log('Received the following syncStatus:', data);
-        syncStatusResponder(data, resolve, synced);
-      },
-      error => {
-        console.error('SYNC_STATUS query errored with:', error);
-        resolve(!synced);
-      },
-    );
-  };
-  return new Promise(queryPromise);
+  const syncStatus = await getSyncStatus();
+  switch (syncStatus) {
+    case 'SYNCED': {
+      console.log('SYNC STATUS:', syncStatus);
+      return synced;
+    }
+    default:
+      console.log('SYNC STATUS:', syncStatus);
+      return !synced;
+  }
 }
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function pauseSnarkWorker() {
+  console.log(`Pausing snark worker...`);
+  console.log('Unsubscribing...');
+  subscription?.unsubscribe();
+  stopSnarkWorker();
+}
+
+async function startSnarkWorker() {
+  console.log(`Starting snark worker...`);
+  await setSnarkWorkFee(LATEST_FEE);
+  await setSnarkWorker(PK);
+  subscription = subscribeToNewBlocks(newBlockResponder);
+}
+
+// all in milliseconds
+const estimateTimeUntilNextEpoch = async () => {
+  try {
+    const {
+      consensusTimeNow: { endTime, globalSlot },
+      consensusConfiguration: { epochDuration, slotsPerEpoch, slotDuration },
+    } = await getConsensusData();
+    const slotsUntilNextEpoch = Number(slotsPerEpoch) - Number(globalSlot);
+    const timeUntilNextEpoch = slotsUntilNextEpoch * Number(slotDuration);
+    return timeUntilNextEpoch;
+  } catch (error) {
+    console.log('Error estimating time until next epoch.');
+    return null;
+  }
+};
+
+const getNextBlockProductionTime = async () => {
+  const times = await getNextBlockProductionTimes();
+  console.log('Next block production times:', times);
+  console.log('Time now, for reference:', Date.now());
+  // An array of times is given, but we only care about the next...
+  return times?.[0];
+};
+
+async function blockProducerCountdown() {
+  while (true) {
+    const { startTime, endTime } = await getNextBlockProductionTime();
+    let timeUntilNextBlock;
+    if (!startTime) {
+      console.log('No more blocks this epoch...');
+      const timeUntilNextEpoch = await estimateTimeUntilNextEpoch();
+      console.log('Time until next epoch:', formatTime(timeUntilNextEpoch));
+      // When we reach the start of the next epoch, we could be the very first block producer. In such cases, we don't want the snark worker to be running, so we'll approach the next epoch tentatively, in the same way as we approach the next block.
+      timeUntilNextBlock = timeUntilNextEpoch ?? RETRY_INTERVAL;
+    } else {
+      timeUntilNextBlock = startTime - Date.now();
+    }
+    console.log('Time until next block:', formatTime(timeUntilNextBlock), timeUntilNextBlock);
+
+    // by now, we have a time for the next block (or epoch)...
+    if (Date.now() >= startTime && Date.now() <= endTime) {
+      // we're in the block - try to get it!
+      console.log('The next block is happening right now!');
+      console.log('Pausing snark work for', formatTime(BLOCK_PRODUCTION_WINDOW));
+      pauseSnarkWorker();
+      await sleep(BLOCK_PRODUCTION_WINDOW);
+    } else if (timeUntilNextBlock < STOP_SNARK_WORKER_BEFORE) {
+      // We're close to creating a block!
+      const timeUntilRestart = timeUntilNextBlock + BLOCK_PRODUCTION_WINDOW;
+      console.log('Pausing snark work for', formatTime(timeUntilRestart));
+      pauseSnarkWorker();
+      await sleep(timeUntilRestart);
+    }
+
+    startSnarkWorker();
+
+    const timeUntilRecalibration = Math.max(
+      (timeUntilNextBlock - STOP_SNARK_WORKER_BEFORE) / 2,
+      60000,
+    ); // approach the time we need to turn off the snark worker, a half interval at a time, up to the last 1 minute, because the timingd
+    console.log('Rechecking in ', formatTime(timeUntilRecalibration));
+    await sleep(timeUntilRecalibration);
+  }
+}
 
 export default async function start(pk) {
-  if (pk) PK = pk;
-  console.log("PK:", PK);
-  while(true) {
-    await poll(pollSyncStatus, 20000, true); // arg true gets passed to polling function
-    setSnarkWorker(PK);
-    setSnarkWorkFee(10);
-    const subscription = subscribeToNewBlocks();
-    await sleep(5000);
-    await poll(pollSyncStatus, 20000, false); // polling until NOT synced
-    console.log(`We're not synced anymore!!!`);
-    console.log('Unsubscribing...');
-    subscription.unsubscribe();
-    stopSnarkWorker();
+  PK = pk;
+
+  while (true) {
+    await poll(pollSyncStatus, RETRY_INTERVAL, { args: true }); // polls until synced
+
+    blockProducerCountdown();
+
+    await poll(pollSyncStatus, RETRY_INTERVAL, { args: false }); // polling until NOT synced
+
+    pauseSnarkWorker(); // because we must have lost sync
   }
 }

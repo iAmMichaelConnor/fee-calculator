@@ -2,7 +2,7 @@
 
 import commander from 'commander';
 
-import start from '../src/index.mjs';
+import startSnarkWorker from '../src/index.mjs';
 
 const { Command } = commander;
 const program = new Command();
@@ -14,10 +14,9 @@ program
 
 // prettier-ignore
 program
-  .option(
+  .requiredOption(
     '--pk <pk>',
     'specify the pk doing snark work',
-    '', // default if no option provided
   );
 
 program.parse(process.argv);
@@ -25,4 +24,6 @@ const opts = program.opts();
 
 const { pk } = opts;
 
-start(pk);
+if (!pk) throw new Error('You need to specify a pk.');
+
+startSnarkWorker(pk);

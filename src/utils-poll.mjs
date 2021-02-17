@@ -6,12 +6,18 @@
 /**
 @param {function} pollingFunction - function MUST return false for 'unsuccessful' results.
 @param {number} interval - polling frequency (in milliseconds)
-@param {object} args = an object of arguments which are to be passed to the pollingFunction each poll.
+@param {object} options = { kill, args }
+  - args = an object of arguments which are to be passed to the pollingFunction each poll.
+  - kill = true / false - passing 'kill' as an object property ensures it retains a reference to some external variable, meaning the poll can be killed from outside.
 */
-const poll = async (pollingFunction, interval, args) => {
+const poll = async (pollingFunction, interval, { args, kill, killMsg }) => {
   console.log('Polling...');
   // this is called as a Promise which only resolves when the conditions of the pollingFunction have been satisfied (i.e. once the pollingFunction returns something other than false).
   const checkPollCondition = async (resolve, reject) => {
+    if (kill) {
+      console.log('Poll killed with msg:', killMsg);
+      resolve('killed');
+    }
     const response = await pollingFunction(args); // polling function must return a FALSE if unsuccessful.
     if (response === false) {
       // if the polling function was unsuccessful, poll again:

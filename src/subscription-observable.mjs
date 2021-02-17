@@ -64,7 +64,7 @@ export const subscribe = (operation, observer) => {
  * @returns {SubscriptionObserver}
  * See here: https://www.apollographql.com/docs/link/
  */
-export const query = (operation, dataCallback, errorCallback) => {
+export const query = async (operation, dataCallback, errorCallback) => {
   // prettier-ignore
   return makePromise(execute(httpLink, operation)) // http link?
     .then(dataCallback)
