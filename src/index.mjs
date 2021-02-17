@@ -1,6 +1,6 @@
 import config from 'config';
 import poll from './utils-poll.mjs';
-import { sleep, formatTime, toDate } from './utils-time.mjs';
+import { sleep, formatTime } from './utils-time.mjs';
 import {
   getSyncStatus,
   getConsensusData,
@@ -23,13 +23,15 @@ const newBlockResponder = data => {
     },
   } = data;
   console.log('SNARK JOBSSSS:', snarkJobs);
-  if (snarkJobs === [] || snarkJobs === undefined) {
+  if (!snarkJobs?.length) {
+    // empty array
     console.log('No snarks were added to the block!');
   } else {
+    const feeArr = snarkJobs.map(job => Number(job.fee));
     const arrayAverage = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
-    const avg = arrayAverage(snarkJobs);
-    const min = Math.min(snarkJobs);
-    const max = Math.max(snarkJobs);
+    const avg = arrayAverage(feeArr);
+    const min = Math.min(feeArr);
+    const max = Math.max(feeArr);
     LATEST_FEE = max.toString();
     setSnarkWorkFee(LATEST_FEE);
   }
@@ -40,7 +42,9 @@ async function pollSyncStatus(synced) {
   console.log(`Polling until ${synced ? 'synced' : 'NOT synced anymore...'}`);
   const syncStatus = await getSyncStatus();
   switch (syncStatus) {
-    case 'SYNCED': {
+    case 'SYNCED':
+    case 'CATCHUP': {
+      // TODO: REMOVE THIS!!!!
       console.log('SYNC STATUS:', syncStatus);
       return synced;
     }
@@ -90,7 +94,7 @@ const getNextBlockProductionTime = async () => {
 
 async function blockProducerCountdown() {
   while (true) {
-    const { startTime, endTime } = await getNextBlockProductionTime();
+    const { startTime, endTime } = (await getNextBlockProductionTime()) ?? {};
     let timeUntilNextBlock;
     if (!startTime) {
       console.log('No more blocks this epoch...');
