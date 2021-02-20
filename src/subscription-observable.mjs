@@ -1,12 +1,3 @@
-/**
- ***  Setup a GraphQL subscription observable  *****************************
- */
-
-// const { execute } = require('apollo-link');
-// const { WebSocketLink } = require('apollo-link-ws');
-// const { SubscriptionClient } = require('subscriptions-transport-ws');
-// const ws = require('ws');
-
 import apolloLink from 'apollo-link'; // SEE HERE FOR REALLY IMPORTANT STUFF: https://www.apollographql.com/docs/link/
 // https://github.com/hasura/nodejs-graphql-subscriptions-boilerplate
 import apolloLinkWS from 'apollo-link-ws';
@@ -85,36 +76,3 @@ async function fetchGraphQL(operation) {
 
   return result.json();
 }
-
-// export async function query(operation, dataCallback, errorCallback) {
-//   const { errors, data } = await fetchGraphQL(operation);
-//
-//   if (errors) {
-//     errorCallback(errors);
-//   } else {
-//     dataCallback(data);
-//   }
-// }
-
-// **************************************************
-
-// EXAMPLE OPERATION:
-// const operation = {
-//   query: gql`query { hello }`,
-//   variables: {} //optional
-//   operationName: {} //optional
-//   context: {} //optional
-//   extensions: {} //optional
-// };
-
-// // execute returns an Observable so it can be subscribed to
-// execute(link, operation).subscribe({
-//   next: data => console.log(`received data: ${JSON.stringify(data, null, 2)}`),
-//   error: error => console.log(`received error ${error}`),
-//   complete: () => console.log(`complete`),
-// })
-//
-// // For single execution operations, a Promise can be used
-// makePromise(execute(link, operation))
-//   .then(data => console.log(`received data ${JSON.stringify(data, null, 2)}`))
-//   .catch(error => console.log(`received error ${error}`))

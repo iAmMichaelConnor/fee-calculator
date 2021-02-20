@@ -25,10 +25,8 @@
     "apollo-link-http": "^1.5.17",
     "apollo-link-ws": "^1.0.20",
     "commander": "^7.0.0",
-    "config": "^3.3.3",
-    "cross-fetch": "^3.0.6",
-    "graphql": "^15.5.0",
     "graphql-tag": "^2.12.1",
+    "log-timestamp": "0.3.0",
     "node-fetch": "^2.6.1",
     "subscriptions-transport-ws": "^0.9.18",
     "ws": "^7.4.3"

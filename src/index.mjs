@@ -1,4 +1,5 @@
-import config from 'config';
+import logTimestamp from 'log-timestamp';
+import config from './config.cjs';
 import poll from './utils-poll.mjs';
 import { sleep, formatTime } from './utils-time.mjs';
 import {
@@ -11,7 +12,7 @@ import {
   subscribeToNewBlocks,
 } from './query-wrappers.mjs';
 
-const { RETRY_INTERVAL, STOP_SNARK_WORKER_BEFORE, BLOCK_PRODUCTION_WINDOW } = config;
+const { RETRY_INTERVAL, STOP_SNARK_WORKER_BEFORE, BLOCK_PRODUCTION_WINDOW, MIN_FEE_THRESHOLD } = config;
 let { LATEST_FEE } = config;
 let subscription;
 let PK;
@@ -22,18 +23,22 @@ const newBlockResponder = data => {
       newBlock: { snarkJobs },
     },
   } = data;
-  console.log('SNARK JOBSSSS:', snarkJobs);
+  console.log('# snark jobs included last block:', snarkJobs?.length);
   if (!snarkJobs?.length) {
     // empty array
     console.log('No snarks were added to the block!');
   } else {
     const feeArr = snarkJobs.map(job => Number(job.fee));
+    console.log('feeArr:', feeArr);
     const arrayAverage = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
     const avg = arrayAverage(feeArr);
-    const min = Math.min(feeArr);
-    const max = Math.max(feeArr);
-    LATEST_FEE = max.toString();
-    setSnarkWorkFee(LATEST_FEE);
+    const min = Math.min(...feeArr);
+    const max = Math.max(...feeArr);
+    console.log('avg fee:', avg);
+    console.log('min fee:', min);
+    console.log('max fee:', max);
+    LATEST_FEE = Math.max(max, MIN_FEE_THRESHOLD);
+    setSnarkWorkFee(LATEST_FEE.toString());
   }
 };
 
@@ -42,9 +47,8 @@ async function pollSyncStatus(synced) {
   console.log(`Polling until ${synced ? 'synced' : 'NOT synced anymore...'}`);
   const syncStatus = await getSyncStatus();
   switch (syncStatus) {
-    case 'SYNCED':
-    case 'CATCHUP': {
-      // TODO: REMOVE THIS!!!!
+    // case 'CATCHUP': // TODO: REMOVE THIS!!!!
+    case 'SYNCED': {
       console.log('SYNC STATUS:', syncStatus);
       return synced;
     }
@@ -135,13 +139,14 @@ async function blockProducerCountdown() {
 
 export default async function start(pk) {
   PK = pk;
+  console.log('CONFIG:', config);
 
   while (true) {
     await poll(pollSyncStatus, RETRY_INTERVAL, { args: true }); // polls until synced
 
     blockProducerCountdown();
 
-    await poll(pollSyncStatus, RETRY_INTERVAL, { args: false }); // polling until NOT synced
+    await poll(pollSyncStatus, RETRY_INTERVAL * 15, { args: false }); // polling until NOT synced
 
     pauseSnarkWorker(); // because we must have lost sync
   }

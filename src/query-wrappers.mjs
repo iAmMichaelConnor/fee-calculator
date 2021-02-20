@@ -125,7 +125,7 @@ export function subscribeToNewBlocks(responder) {
     },
     {
       next: data => {
-        console.log(`NewBlock subscription received new data: ${JSON.stringify(data, null, 2)}`);
+        console.log(`NewBlock subscription received new data (too much to log)`);
         responder(data);
       },
       error: error => console.log(`received error ${error}`),
