@@ -1,4 +1,7 @@
-import logTimestamp from 'log-timestamp';
+/* eslint-disable no-constant-condition */
+
+import logTimestamp from 'log-timestamp'; // eslint-disable-line no-unused-vars
+// ^^^ it doesn't need to be used; simply importing it has the effect we need.
 import config from './config.cjs';
 import poll from './utils-poll.mjs';
 import { sleep, formatTime } from './utils-time.mjs';
@@ -12,10 +15,47 @@ import {
   subscribeToNewBlocks,
 } from './query-wrappers.mjs';
 
-const { RETRY_INTERVAL, STOP_SNARK_WORKER_BEFORE, BLOCK_PRODUCTION_WINDOW, MIN_FEE_THRESHOLD } = config;
+const {
+  RETRY_INTERVAL,
+  STOP_SNARK_WORKER_BEFORE,
+  BLOCK_PRODUCTION_WINDOW,
+  MIN_FEE_THRESHOLD,
+} = config;
 let { LATEST_FEE } = config;
 let subscription;
 let PK;
+
+const arrayAverage = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+
+// This might not be the best strategy, if the top prover has loads of nodes running for a single public key (because lots of tiny fees might sum to a lot for them, but not for my single node).
+// TODO: maybe basing the fee on others isn't possible, since we don't know their setup, and so can't calibrate to be profitable with our setup. We'd need to be able to gauge how many snarks per hour they can produce vs us. Bleurgh.
+const getTopProverFee = snarkJobs => {
+  const snarkWorkers = snarkJobs.reduce((acc, cur) => {
+    const { prover, fee } = cur;
+    const obj = acc[prover];
+    if (obj) {
+      obj.fees.push(fee);
+      obj.totalFees += fee;
+    } else {
+      acc[prover] = {
+        fees: [fee],
+        totalFees: fee,
+      };
+    }
+    return acc;
+  }, {});
+  const feeObj = Object.values(snarkWorkers).reduce((acc, cur) => {
+    return acc.totalFees > cur.totalFees ? acc : cur;
+  });
+  const avgFee = arrayAverage(feeObj.fees);
+  console.log(`top prover's fees:`, feeObj.fees);
+  console.log(`top prover's avg fee:`, avgFee);
+  return avgFee;
+};
+
+const maxFee = feeArr => Math.max(...feeArr);
+const minFee = feeArr => Math.min(...feeArr);
+const averageFee = feeArr => arrayAverage(feeArr);
 
 const newBlockResponder = data => {
   const {
@@ -23,21 +63,20 @@ const newBlockResponder = data => {
       newBlock: { snarkJobs },
     },
   } = data;
+
   console.log('# snark jobs included last block:', snarkJobs?.length);
   if (!snarkJobs?.length) {
     // empty array
     console.log('No snarks were added to the block!');
   } else {
+    const fee = getTopProverFee(snarkJobs); // TODO: replace with method you want.
+
     const feeArr = snarkJobs.map(job => Number(job.fee));
     console.log('feeArr:', feeArr);
-    const arrayAverage = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
-    const avg = arrayAverage(feeArr);
-    const min = Math.min(...feeArr);
-    const max = Math.max(...feeArr);
-    console.log('avg fee:', avg);
-    console.log('min fee:', min);
-    console.log('max fee:', max);
-    LATEST_FEE = Math.max(max, MIN_FEE_THRESHOLD);
+    console.log('avg fee:', averageFee(snarkJobs));
+    console.log('min fee:', minFee(snarkJobs));
+    console.log('max fee:', maxFee(snarkJobs));
+    LATEST_FEE = Math.max(fee, MIN_FEE_THRESHOLD);
     setSnarkWorkFee(LATEST_FEE.toString());
   }
 };
