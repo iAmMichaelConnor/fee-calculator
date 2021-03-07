@@ -24,7 +24,7 @@ const {
   ONE_BILLION,
 } = config;
 let { LATEST_FEE } = config;
-let subscription;
+let subscription = null;
 let PK;
 
 // This might not be the best strategy, if the top prover has loads of nodes running for a single public key (because lots of tiny fees might sum to a lot for them, but not for my single node).
@@ -77,7 +77,7 @@ const newBlockResponder = data => {
     console.log('upper quartile fee:', q75(feeArr));
     console.log('95th percentile fee:', quantile(feeArr, 0.95));
     LATEST_FEE = Math.max(quantile(feeArr, 0.95), MIN_FEE_THRESHOLD);
-    setSnarkWorkFee(LATEST_FEE.toString());
+    setSnarkWorkFee(LATEST_FEE);
   }
 };
 
@@ -101,6 +101,7 @@ async function pauseSnarkWorker() {
   console.log(`Pausing snark worker...`);
   console.log('Unsubscribing...');
   subscription?.unsubscribe();
+  subscription = null;
   stopSnarkWorker();
 }
 
@@ -108,6 +109,13 @@ async function startSnarkWorker() {
   console.log(`Starting snark worker...`);
   await setSnarkWorkFee(LATEST_FEE);
   await setSnarkWorker(PK);
+  // TODO: catch errors to prevent multiple subscriptions from existing!!!
+  try {
+    await subscription?.unsubscribe(); // kill old subscription, so we don't end up with many
+    subscription = null;
+  } catch (err) {
+    throw new Error('Unsubscribing failed', err);
+  }
   subscription = subscribeToNewBlocks(newBlockResponder);
 }
 
@@ -137,6 +145,7 @@ const getNextBlockProductionTime = async () => {
 
 async function blockProducerCountdown() {
   while (true) {
+    // TODO: CHECK IF SYNCED!!!
     const { startTime, endTime } = (await getNextBlockProductionTime()) ?? {};
     let timeUntilNextBlock;
     if (!startTime) {
