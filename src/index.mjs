@@ -14,24 +14,26 @@ import {
   stopSnarkWorker,
   subscribeToNewBlocks,
 } from './query-wrappers.mjs';
+import { mean, median, q75, quantile, max, min } from './stats.mjs';
 
 const {
   RETRY_INTERVAL,
   STOP_SNARK_WORKER_BEFORE,
   BLOCK_PRODUCTION_WINDOW,
   MIN_FEE_THRESHOLD,
+  ONE_BILLION,
 } = config;
 let { LATEST_FEE } = config;
 let subscription;
 let PK;
 
-const arrayAverage = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
-
 // This might not be the best strategy, if the top prover has loads of nodes running for a single public key (because lots of tiny fees might sum to a lot for them, but not for my single node).
 // TODO: maybe basing the fee on others isn't possible, since we don't know their setup, and so can't calibrate to be profitable with our setup. We'd need to be able to gauge how many snarks per hour they can produce vs us. Bleurgh.
 const getTopProverFee = snarkJobs => {
   const snarkWorkers = snarkJobs.reduce((acc, cur) => {
-    const { prover, fee } = cur;
+    const { prover } = cur;
+    let { fee } = cur;
+    fee = Number(fee);
     const obj = acc[prover];
     if (obj) {
       obj.fees.push(fee);
@@ -47,15 +49,11 @@ const getTopProverFee = snarkJobs => {
   const feeObj = Object.values(snarkWorkers).reduce((acc, cur) => {
     return acc.totalFees > cur.totalFees ? acc : cur;
   });
-  const avgFee = arrayAverage(feeObj.fees);
-  console.log(`top prover's fees:`, feeObj.fees);
+  const avgFee = mean(feeObj.fees);
+  console.log(`top prover's fees:`, feeObj.fees.toString());
   console.log(`top prover's avg fee:`, avgFee);
   return avgFee;
 };
-
-const maxFee = feeArr => Math.max(...feeArr);
-const minFee = feeArr => Math.min(...feeArr);
-const averageFee = feeArr => arrayAverage(feeArr);
 
 const newBlockResponder = data => {
   const {
@@ -72,11 +70,13 @@ const newBlockResponder = data => {
     const fee = getTopProverFee(snarkJobs); // TODO: replace with method you want.
 
     const feeArr = snarkJobs.map(job => Number(job.fee));
-    console.log('feeArr:', feeArr);
-    console.log('avg fee:', averageFee(snarkJobs));
-    console.log('min fee:', minFee(snarkJobs));
-    console.log('max fee:', maxFee(snarkJobs));
-    LATEST_FEE = Math.max(fee, MIN_FEE_THRESHOLD);
+    console.log('feeArr:', feeArr.toString());
+    console.log('avg fee:', mean(feeArr));
+    console.log('min fee:', min(feeArr));
+    console.log('max fee:', max(feeArr));
+    console.log('upper quartile fee:', q75(feeArr));
+    console.log('95th percentile fee:', quantile(feeArr, 0.95));
+    LATEST_FEE = Math.max(quantile(feeArr, 0.95), MIN_FEE_THRESHOLD);
     setSnarkWorkFee(LATEST_FEE.toString());
   }
 };

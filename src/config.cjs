@@ -9,5 +9,6 @@ module.exports = {
   EPOCH_DURATION: 1285200000, // 2.125 weeks
   STOP_SNARK_WORKER_BEFORE: 1800000, // 30 mins
   BLOCK_PRODUCTION_WINDOW: 900000, // 15 mins
-  MIN_FEE_THRESHOLD: 10000000, // minimum acceptable snark fee i'm willing to charge
+  MIN_FEE_THRESHOLD: 10000000, // (in nanoMina minimum acceptable snark fee i'm willing to charge
+  ONE_BILLION: 1000000000,
 };
