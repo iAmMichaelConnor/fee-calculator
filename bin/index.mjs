@@ -1,4 +1,4 @@
-#!/usr/bin/env -S node
+#!/usr/bin/env node
 
 import commander from 'commander';
 
@@ -25,5 +25,7 @@ const opts = program.opts();
 const { pk } = opts;
 
 if (!pk) throw new Error('You need to specify a pk.');
+
+console.log('\n\n\nWRKR RUNNING\n\n\n');
 
 startSnarkWorker(pk);
