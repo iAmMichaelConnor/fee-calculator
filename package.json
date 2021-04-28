@@ -1,7 +1,7 @@
 {
-  "name": "fee-calculator",
+  "name": "wrkr",
   "version": "1.0.0",
-  "description": "fee calculator",
+  "description": "wrkr",
   "main": "index.mjs",
   "scripts": {
     "start": "node ./src/index.mjs",
@@ -12,14 +12,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iAmMichaelConnor/fee-calculator.git"
+    "url": "git+https://github.com/iAmMichaelConnor/wrkr.git"
   },
   "author": "iAmMichaelConnor",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/iAmMichaelConnor/fee-calculator/issues"
+    "url": "https://github.com/iAmMichaelConnor/wrkr/issues"
   },
-  "homepage": "https://github.com/iAmMichaelConnor/fee-calculator#readme",
+  "homepage": "https://github.com/iAmMichaelConnor/wrkr#readme",
   "dependencies": {
     "apollo-link": "^1.2.14",
     "apollo-link-http": "^1.5.17",
